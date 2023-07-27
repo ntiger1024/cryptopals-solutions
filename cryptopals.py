@@ -619,12 +619,58 @@ def challenge16():
     malformed[prefix_size + prefix_padding_size + payload.find(b":")] ^= 1
     malformed[prefix_size + prefix_padding_size + payload.find(b"<")] ^= 1
     result = has_admin(malformed)
-    assert result == True
+    assert result is True
+
+
+def aes_ctr_encrypt(plain, key, nonce):
+    """AES encrytion with ctr mode."""
+    nonce_bytes = nonce.to_bytes(8, "little")
+    blocks, remainds = divmod(len(plain), 16)
+    cipher = b""
+    for i in range(blocks):
+        nonce_counter = nonce_bytes + i.to_bytes(8, "little")
+        nonce_counter_cipher = aes_ecb_encrypt(nonce_counter, key)
+        cipher += fixed_xor(nonce_counter_cipher, plain[i*16: (i+1)*16])
+    if remainds:
+        nonce_counter = nonce_bytes + blocks.to_bytes(8, "little")
+        nonce_counter_cipher = aes_ecb_encrypt(nonce_counter, key)
+        cipher += fixed_xor(nonce_counter_cipher[:remainds], plain[blocks*16:])
+    return cipher
+
+
+def aes_ctr_decrypt(cipher, key, nonce):
+    """AES decrytion with ctr mode."""
+    nonce_bytes = nonce.to_bytes(8, "little")
+    blocks, remainds = divmod(len(cipher), 16)
+    plain = b""
+    for i in range(blocks):
+        nonce_counter = nonce_bytes + i.to_bytes(8, "little")
+        nonce_counter_cipher = aes_ecb_encrypt(nonce_counter, key)
+        plain += fixed_xor(nonce_counter_cipher, cipher[i*16: (i+1)*16])
+    if remainds:
+        nonce_counter = nonce_bytes + blocks.to_bytes(8, "little")
+        nonce_counter_cipher = aes_ecb_encrypt(nonce_counter, key)
+        plain += fixed_xor(nonce_counter_cipher[:remainds], cipher[blocks*16:])
+    return plain
+
+
+def challenge18():
+    """Challenge 18."""
+    msg = b"L77na/nrFsKvynd6HzOoG7GHTLXsTVu9qvY/2syLXzhPweyyMTJULu/6/kXX0KSv"\
+        b"oOLSFQ=="
+    cipher = base64.b64decode(msg)
+    result = aes_ctr_decrypt(cipher, b"YELLOW SUBMARINE", 0)
+    expected = b"Yo, VIP Let's kick it Ice, Ice, baby Ice, Ice, baby "
+    assert result == expected
+
+    result = base64.b64encode(aes_ctr_encrypt(expected, b"YELLOW SUBMARINE", 0))
+    expected = msg
+    assert result == expected
 
 
 def main():
     """Main entry."""
-    if True:
+    if False:
         challenge1()
         challenge2()
         challenge3()
@@ -643,6 +689,7 @@ def main():
         challenge14()
         challenge15()
         challenge16()
+    challenge18()
 
 
 if __name__ == "__main__":
