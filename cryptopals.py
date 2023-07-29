@@ -270,9 +270,7 @@ def pkcs7padding(data, block_size):
 
 def pkcs7depadding(plain):
     """A pkcs7padding implementation for depadding."""
-    padding_size = plain[-1]
-    plain = plain[:-padding_size]
-    return plain
+    return validate_pkcs7(plain)
 
 
 def challenge9():
