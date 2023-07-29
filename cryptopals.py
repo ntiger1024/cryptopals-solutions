@@ -54,6 +54,17 @@ LETTER_FREQ = {
     b" ": 0.17166,
     }
 
+"""
+LETTER_FREQ = {
+    b'a': 0.0651738, b'b': 0.0124248, b'c': 0.0217339, b'd': 0.0349835,
+    b'e': 0.1041442, b'f': 0.0197881, b'g': 0.0158610, b'h': 0.0492888,
+    b'i': 0.0558094, b'j': 0.0009033, b'k': 0.0050529, b'l': 0.0331490,
+    b'm': 0.0202124, b'n': 0.0564513, b'o': 0.0596302, b'p': 0.0137645,
+    b'q': 0.0008606, b'r': 0.0497563, b's': 0.0515760, b't': 0.0729357,
+    b'u': 0.0225134, b'v': 0.0082903, b'w': 0.0171272, b'x': 0.0013692,
+    b'y': 0.0145984, b'z': 0.0007836, b' ': 0.1918182
+}
+"""
 
 def score_english(text):
     """Score helper function."""
@@ -668,6 +679,98 @@ def challenge18():
     assert result == expected
 
 
+def break_fixed_nonce_ctr(ciphers, length):
+    """Break fixed-nonce ctr."""
+    key_stream = b""
+    num_ciphers = len(ciphers)
+    for i in range(length):
+        cipher_bytes = [ciphers[j][i] for j in range(num_ciphers)]
+        _, _, key = break_single_byte_xor(cipher_bytes)
+        key_stream += key.to_bytes(1, "little")
+
+    plains = [fixed_xor(key_stream, ciphers[i]) for i in range(num_ciphers)]
+    return plains
+
+
+def challenge19():
+    """Challenge 19."""
+    msgs = [
+        b"SSBoYXZlIG1ldCB0aGVtIGF0IGNsb3NlIG9mIGRheQ==",
+        b"Q29taW5nIHdpdGggdml2aWQgZmFjZXM=",
+        b"RnJvbSBjb3VudGVyIG9yIGRlc2sgYW1vbmcgZ3JleQ==",
+        b"RWlnaHRlZW50aC1jZW50dXJ5IGhvdXNlcy4=",
+        b"SSBoYXZlIHBhc3NlZCB3aXRoIGEgbm9kIG9mIHRoZSBoZWFk",
+        b"T3IgcG9saXRlIG1lYW5pbmdsZXNzIHdvcmRzLA==",
+        b"T3IgaGF2ZSBsaW5nZXJlZCBhd2hpbGUgYW5kIHNhaWQ=",
+        b"UG9saXRlIG1lYW5pbmdsZXNzIHdvcmRzLA==",
+        b"QW5kIHRob3VnaHQgYmVmb3JlIEkgaGFkIGRvbmU=",
+        b"T2YgYSBtb2NraW5nIHRhbGUgb3IgYSBnaWJl",
+        b"VG8gcGxlYXNlIGEgY29tcGFuaW9u",
+        b"QXJvdW5kIHRoZSBmaXJlIGF0IHRoZSBjbHViLA==",
+        b"QmVpbmcgY2VydGFpbiB0aGF0IHRoZXkgYW5kIEk=",
+        b"QnV0IGxpdmVkIHdoZXJlIG1vdGxleSBpcyB3b3JuOg==",
+        b"QWxsIGNoYW5nZWQsIGNoYW5nZWQgdXR0ZXJseTo=",
+        b"QSB0ZXJyaWJsZSBiZWF1dHkgaXMgYm9ybi4=",
+        b"VGhhdCB3b21hbidzIGRheXMgd2VyZSBzcGVudA==",
+        b"SW4gaWdub3JhbnQgZ29vZCB3aWxsLA==",
+        b"SGVyIG5pZ2h0cyBpbiBhcmd1bWVudA==",
+        b"VW50aWwgaGVyIHZvaWNlIGdyZXcgc2hyaWxsLg==",
+        b"V2hhdCB2b2ljZSBtb3JlIHN3ZWV0IHRoYW4gaGVycw==",
+        b"V2hlbiB5b3VuZyBhbmQgYmVhdXRpZnVsLA==",
+        b"U2hlIHJvZGUgdG8gaGFycmllcnM/",
+        b"VGhpcyBtYW4gaGFkIGtlcHQgYSBzY2hvb2w=",
+        b"QW5kIHJvZGUgb3VyIHdpbmdlZCBob3JzZS4=",
+        b"VGhpcyBvdGhlciBoaXMgaGVscGVyIGFuZCBmcmllbmQ=",
+        b"V2FzIGNvbWluZyBpbnRvIGhpcyBmb3JjZTs=",
+        b"SGUgbWlnaHQgaGF2ZSB3b24gZmFtZSBpbiB0aGUgZW5kLA==",
+        b"U28gc2Vuc2l0aXZlIGhpcyBuYXR1cmUgc2VlbWVkLA==",
+        b"U28gZGFyaW5nIGFuZCBzd2VldCBoaXMgdGhvdWdodC4=",
+        b"VGhpcyBvdGhlciBtYW4gSSBoYWQgZHJlYW1lZA==",
+        b"QSBkcnVua2VuLCB2YWluLWdsb3Jpb3VzIGxvdXQu",
+        b"SGUgaGFkIGRvbmUgbW9zdCBiaXR0ZXIgd3Jvbmc=",
+        b"VG8gc29tZSB3aG8gYXJlIG5lYXIgbXkgaGVhcnQs",
+        b"WWV0IEkgbnVtYmVyIGhpbSBpbiB0aGUgc29uZzs=",
+        b"SGUsIHRvbywgaGFzIHJlc2lnbmVkIGhpcyBwYXJ0",
+        b"SW4gdGhlIGNhc3VhbCBjb21lZHk7",
+        b"SGUsIHRvbywgaGFzIGJlZW4gY2hhbmdlZCBpbiBoaXMgdHVybiw=",
+        b"VHJhbnNmb3JtZWQgdXR0ZXJseTo=",
+        b"QSB0ZXJyaWJsZSBiZWF1dHkgaXMgYm9ybi4="
+    ]
+    key = secrets.token_bytes(16)
+    ciphers = [aes_ctr_encrypt(base64.b64decode(msg), key, 0) for msg in msgs]
+    min_length = min([len(cipher) for cipher in ciphers])
+    plains = break_fixed_nonce_ctr(ciphers, min_length)
+
+    plains = [plain.lower() for plain in plains]
+    expected = [base64.b64decode(msg)[:min_length].lower() for msg in msgs]
+
+    assert plains == expected
+
+
+def challenge20():
+    """Challenge 20."""
+    ciphers = []
+    with open("20.txt", "r", encoding="utf-8") as f:
+        min_length = 100000
+        for line in f:
+            if line[-1] == "\n":
+                line = line[:-1]
+            cipher = base64.b64decode(line)
+            cipher_len = len(cipher)
+            if cipher_len < min_length:
+                min_length = cipher_len
+            ciphers.append(cipher)
+
+    plains = break_fixed_nonce_ctr(ciphers, min_length)
+    expected = []
+    with open("20-plain.txt", "r", encoding="utf-8") as f:
+        for line in f:
+            if line[-1] == "\n":
+                line = line[:-1]
+            expected.append(line.encode())
+    assert plains == expected
+
+
 def main():
     """Main entry."""
     if False:
@@ -689,7 +792,9 @@ def main():
         challenge14()
         challenge15()
         challenge16()
-    challenge18()
+        challenge18()
+        challenge19()
+        challenge20()
 
 
 if __name__ == "__main__":
