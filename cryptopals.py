@@ -2,7 +2,9 @@
 """Cryptopals sulotions."""
 
 import base64
+import random
 import secrets
+import time
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 
 
@@ -771,6 +773,103 @@ def challenge20():
     assert plains == expected
 
 
+class MT19937:
+    """Mersenne Twister 19937."""
+    N = 624
+    M = 397
+
+    def __init__(self, seed, as_python = False):
+        self.state = []
+        self.index = 0
+        if as_python:
+            self._as_python_initialize(seed)
+        else:
+            self._initialize_generator(seed)
+
+    def _as_python_initialize(self, seed):
+        self._initialize_generator(19650218)
+        mt = self.state
+        i=1
+        for _ in range(self.N):
+            mt[i] = ((mt[i] ^ ((mt[i-1] ^ (mt[i-1] >> 30)) * 1664525)) + seed) & 0xffffffff
+            i += 1
+            if i >= self.N:
+                mt[0] = mt[self.N - 1]
+                i=1
+
+        for _ in range(self.N - 1):
+            mt[i] = ((mt[i] ^ ((mt[i-1] ^ (mt[i-1] >> 30)) * 1566083941)) - i) & 0xffffffff
+            i += 1
+            if i >= self.N:
+                mt[0] = mt[self.N-1]
+                i=1
+        mt[0] = 0x80000000
+
+    def _initialize_generator(self, seed):
+        """Initialize generator."""
+        self.state.append(seed & 0xffffffff)
+        for i in range(1, 624):
+            prev = self.state[i - 1]
+            curr = (1812433253 * (prev ^ (prev >> 30)) + i)
+            self.state.append(curr & 0xffffffff)
+
+    def extract_number(self):
+        """Extract a tempered pseudorandom number based on the index-th value.
+        calling generate_numbers() every 624 numbers"""
+
+        if self.index == 0:
+            self._generate_numbers()
+        num = self.state[self.index]
+        self.index = (self.index + 1) % 624
+        return self._temper(num)
+
+    def _generate_numbers(self):
+        """Generate an array of 624 untempered numbers."""
+        for i in range(624):
+            j = (i + 1) % 624
+            k = (i + 397) % 624
+            y = (self.state[i] & 0x80000000) + (self.state[j] & 0x7fffffff)
+            self.state[i] = (self.state[k] ^ (y >> 1)) & 0xffffffff
+            if y % 2 != 0:
+                self.state[i] = (self.state[i] ^ 2567483615) & 0xffffffff
+
+    def _temper(self, num):
+        """Temper the number."""
+        num ^= num >> 11
+        num ^= (num << 7) & 2636928640
+        num ^= (num << 15) & 4022730752
+        num ^= num >> 18
+        return num & 0xffffffff
+
+
+def challenge21():
+    """Challenge 21."""
+    seed = 100
+    mt19937 = MT19937(seed, True)
+    random.seed(seed)
+    for _ in range(10000):
+        my = mt19937.extract_number()
+        expected = random.getrandbits(32)
+        assert my == expected
+
+
+def challenge22():
+    """Challenge 22."""
+    expected = int(time.time()) & 0xffffffff
+    mt19937 = MT19937(expected)
+
+    fake_timestamp = expected + secrets.randbelow(10000)
+    first = mt19937.extract_number()
+    result = 0
+    for ts in range(fake_timestamp, -1, -1):
+        tester = MT19937(ts)
+        if tester.extract_number() == first:
+            result = ts
+            break
+    print(result, expected)
+    assert result == expected
+
+
 def main():
     """Main entry."""
     if False:
@@ -795,6 +894,8 @@ def main():
         challenge18()
         challenge19()
         challenge20()
+        challenge21()
+    challenge22()
 
 
 if __name__ == "__main__":
