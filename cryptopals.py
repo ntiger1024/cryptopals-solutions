@@ -8,6 +8,10 @@ import time
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 
 
+class MyException(Exception):
+    """My Exception class."""
+
+
 def hex_to_base64(hex_str):
     """Convert hex string to base64 bytes."""
     bins = base64.b16decode(hex_str, True)
@@ -268,9 +272,9 @@ def pkcs7padding(data, block_size):
     return data + padding_bytes
 
 
-def pkcs7depadding(plain):
+def pkcs7depadding(plain, block_size):
     """A pkcs7padding implementation for depadding."""
-    return validate_pkcs7(plain)
+    return validate_pkcs7(plain, block_size)
 
 
 def challenge9():
@@ -283,6 +287,7 @@ def challenge9():
 
 def aes_cbc_pkcs7_decrypt_by_ecb(cipher, key, iv):
     """Implement aes cbc mode decryption by ecb mode."""
+    saved_iv = iv
     plain = bytearray()
     for i in range(0, len(cipher), 16):
         block = cipher[i: i + 16]
@@ -290,7 +295,7 @@ def aes_cbc_pkcs7_decrypt_by_ecb(cipher, key, iv):
         plain_block = fixed_xor(iv, plain_block)
         iv = block
         plain.extend(plain_block)
-    plain = pkcs7depadding(plain)
+    plain = pkcs7depadding(plain, 16)
     return bytes(plain)
 
 
@@ -321,7 +326,7 @@ def aes_ecb_pkcs7_encrypt(plain, key):
 
 def aes_ecb_pkcs7_decrypt(cipher, key):
     """As function name says."""
-    return pkcs7depadding(aes_ecb_decrypt(cipher, key))
+    return pkcs7depadding(aes_ecb_decrypt(cipher, key), 16)
 
 
 def aes_cbc_pkcs7_encrypt_by_ecb(plain, key, iv):
@@ -558,17 +563,19 @@ def challenge14():
 
 
 BAD_MSG = "Bad padding"
-def validate_pkcs7(data):
+def validate_pkcs7(data, block_size):
     """Validate if data is pkcs7 padding."""
     length = len(data)
     if length == 0:
-        raise Exception(BAD_MSG)
+        raise MyException(BAD_MSG)
     last = data[-1]
+    if last == 0 or last > block_size:
+        raise MyException(BAD_MSG)
     if length < last:
-        raise Exception(BAD_MSG)
+        raise MyException(BAD_MSG)
     for i in range(length - last, length):
         if data[i] != last:
-            raise Exception(BAD_MSG)
+            raise MyException(BAD_MSG)
     return data[:-last]
 
 
@@ -576,7 +583,7 @@ def challenge15():
     """Challeng 15."""
     data = b"ICE ICE BABY\x04\x04\x04\x04"
     expected = b"ICE ICE BABY"
-    result = validate_pkcs7(data)
+    result = validate_pkcs7(data, 16)
     assert result == expected
 
     expected = BAD_MSG
@@ -584,17 +591,17 @@ def challenge15():
     result = None
     try:
         data = b"ICE ICE BABY\x05\x05\x05\x05"
-        validate_pkcs7(data)   
-    except Exception as e:
-        result = e.args[0]
+        validate_pkcs7(data, 16)
+    except MyException as err:
+        result = err.args[0]
     assert result == expected
 
     result = None
     try:
         data = b"ICE ICE BABY\x01\x02\x03\x04"
-        validate_pkcs7(data)   
-    except Exception as e:
-        result = e.args[0]
+        validate_pkcs7(data, 16)
+    except MyException as err:
+        result = err.args[0]
     assert result == expected
 
 
@@ -631,6 +638,75 @@ def challenge16():
     malformed[prefix_size + prefix_padding_size + payload.find(b"<")] ^= 1
     result = has_admin(malformed)
     assert result is True
+
+
+CBC_PADDING_ORACLE_PLAINS = [
+    b"MDAwMDAwTm93IHRoYXQgdGhlIHBhcnR5IGlzIGp1bXBpbmc=",
+    b"MDAwMDAxV2l0aCB0aGUgYmFzcyBraWNrZWQgaW4gYW5kIHRoZSBWZWdhJ3MgYXJlIHB1bXBpbic=",
+    b"MDAwMDAyUXVpY2sgdG8gdGhlIHBvaW50LCB0byB0aGUgcG9pbnQsIG5vIGZha2luZw==",
+    b"MDAwMDAzQ29va2luZyBNQydzIGxpa2UgYSBwb3VuZCBvZiBiYWNvbg==",
+    b"MDAwMDA0QnVybmluZyAnZW0sIGlmIHlvdSBhaW4ndCBxdWljayBhbmQgbmltYmxl",
+    b"MDAwMDA1SSBnbyBjcmF6eSB3aGVuIEkgaGVhciBhIGN5bWJhbA==",
+    b"MDAwMDA2QW5kIGEgaGlnaCBoYXQgd2l0aCBhIHNvdXBlZCB1cCB0ZW1wbw==",
+    b"MDAwMDA3SSdtIG9uIGEgcm9sbCwgaXQncyB0aW1lIHRvIGdvIHNvbG8=",
+    b"MDAwMDA4b2xsaW4nIGluIG15IGZpdmUgcG9pbnQgb2g=",
+    b"MDAwMDA5aXRoIG15IHJhZy10b3AgZG93biBzbyBteSBoYWlyIGNhbiBibG93",
+]
+CBC_PADDING_ORACLE_KEY = secrets.token_bytes(16)
+def cbc_padding_oracle_encrypt(plain):
+    """Encryption."""
+    # iv = secrets.token_bytes(16)
+    iv = b's\x1fy)\x04\xa5\xfbB\xe9\xff\xfdMt\xb6\xed\x1c'
+    cipher = aes_cbc_pkcs7_encrypt_by_ecb(plain, CBC_PADDING_ORACLE_KEY, iv)
+    return cipher, iv
+
+
+def cbc_padding_oracle_decrypt(cipher, iv):
+    """Decryption."""
+    try:
+        plain = aes_cbc_pkcs7_decrypt_by_ecb(cipher, CBC_PADDING_ORACLE_KEY, iv)
+        return True
+    except MyException:
+        return False
+
+
+def break_cbc_padding_oracle(cipher, iv, block_size):
+    """Break the cbc padding oracle funtions."""
+    plain = bytearray(len(cipher))
+    blocks = len(cipher) // block_size
+    orig_prev_block = bytearray(iv)
+    prev_block = orig_prev_block[:]
+    for i in range(blocks):
+        intermediate = bytearray(block_size)
+        cipher_block = cipher[i * block_size: i * block_size + block_size]
+        for j in range(block_size - 1, -1, -1):
+            padding_byte = block_size - j
+            for k in range(j + 1, block_size):
+                prev_block[k] = intermediate[k] ^ padding_byte
+            for k in range(256):
+                prev_block[j] = k
+                if j > 0:
+                    prev_block[j-1] = (k + 1) % 256
+                if cbc_padding_oracle_decrypt(cipher_block, prev_block) is True:
+                    if j > 0:
+                        prev_block[j-1] = (k + 2) % 256
+                    if cbc_padding_oracle_decrypt(cipher_block, prev_block) is True:
+                        intermediate[j] = prev_block[j] ^ padding_byte
+                        plain[i * block_size + j] = intermediate[j] ^ orig_prev_block[j]
+                        break
+        orig_prev_block = bytearray(cipher_block)
+        prev_block = orig_prev_block[:]
+    return pkcs7depadding(plain, 16)
+
+
+def challenge17():
+    """Challenge 17."""
+    for expected in CBC_PADDING_ORACLE_PLAINS:
+        expected = base64.b64decode(expected)
+        cipher, iv = cbc_padding_oracle_encrypt(expected)
+        plain = break_cbc_padding_oracle(cipher, iv, 16)
+        # print(plain)
+        assert plain == expected
 
 
 def aes_ctr_encrypt(plain, key, nonce):
@@ -864,7 +940,7 @@ def challenge22():
         if tester.extract_number() == first:
             result = ts
             break
-    print(result, expected)
+    # print(result, expected)
     assert result == expected
 
 
@@ -889,11 +965,12 @@ def main():
         challenge14()
         challenge15()
         challenge16()
+        challenge17()
         challenge18()
         challenge19()
         challenge20()
         challenge21()
-    challenge22()
+        challenge22()
 
 
 if __name__ == "__main__":
