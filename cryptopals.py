@@ -944,6 +944,114 @@ def challenge22():
     assert result == expected
 
 
+def reverse_rshift_xor(y, n):
+    """Reverse right shift xor operation."""
+    assert n != 0
+
+    if n >= 32:
+        return y
+
+    x = y & ~((1 << (32-n)) - 1)
+    for i in range(31 - n, -1, -1):
+        x |= (y ^ (x >> n)) & (1 << i)
+
+    return x
+
+
+def reverse_lshift_xor(y, n, m):
+    """Reverse right shift xor and magic operation."""
+    assert n != 0
+
+    if n >= 32:
+        return y
+
+    x = y & ((1 << n) - 1)
+    for i in range(n, 32):
+        x |= (y ^ ((x << n) & m)) & (1 << i)
+
+    return x
+
+
+def untemper(y):
+    """Untemper mt19937."""
+    y = reverse_rshift_xor(y, 18)
+    y = reverse_lshift_xor(y, 15, 0xefc60000)
+    y = reverse_lshift_xor(y, 7, 0x9d2c5680)
+    y = reverse_rshift_xor(y, 11)
+    return y
+
+
+def challenge23():
+    """Challenge 23."""
+    x = 0xdeadbeef
+    for n in range(1, 34):
+        y = x ^ (x >> n)
+        result = reverse_rshift_xor(y, n)
+        assert result == x
+
+    m = 0x9d2c5680
+    for n in range(1, 34):
+        m = (m & ((1 << n) - 1))
+        y = x ^ ((x << n) & m)
+        result = reverse_lshift_xor(y, n, m)
+        assert result == x
+
+    prng1 = MT19937(100)
+    state = []
+    for i in range(624):
+        tempered = prng1.extract_number()
+        num = untemper(tempered)
+        state.append(num)
+    prng2 = MT19937(0)
+    prng2.state = state
+    for _ in range(10000):
+        num1 = prng1.extract_number()
+        num2 = prng2.extract_number()
+        assert num1 == num2
+
+
+def mt19937_encrypt(plain, key):
+    """Encrpytion using mt19937 prng."""
+    prng = MT19937(key)
+    cipher = b""
+    idx = 0
+    for b in plain:
+        if idx == 0:
+            keystream = prng.extract_number().to_bytes(4, "little")
+        cipher += (b ^ keystream[idx]).to_bytes(1, "little")
+        idx = (idx + 1) % 4
+    return cipher
+
+
+def mt19937_decrypt(cipher, key):
+    """Decryption using mt19937 prng."""
+    prng = MT19937(key)
+    plain = b""
+    idx = 0
+    for b in cipher:
+        if idx == 0:
+            keystream = prng.extract_number().to_bytes(4, "little")
+        plain += (b ^ keystream[idx]).to_bytes(1, "little")
+        idx = (idx + 1) % 4
+    return plain
+
+
+def challenge24():
+    """Challenge 24."""
+    prefix = secrets.token_bytes(secrets.randbelow(32))
+    plain = prefix + b"A" * 14
+    key = secrets.randbelow(2 ** 16)
+    cipher = mt19937_encrypt(plain, key)
+
+    result = None
+    for i in range(2 ** 16):
+        curr = mt19937_decrypt(cipher, i)
+        if curr.endswith(b"A" * 14):
+            result = i
+    # print(result, key)
+    assert result == key
+
+
 def main():
     """Main entry."""
     if False:
@@ -971,6 +1079,8 @@ def main():
         challenge20()
         challenge21()
         challenge22()
+        challenge23()
+        challenge24()
 
 
 if __name__ == "__main__":
