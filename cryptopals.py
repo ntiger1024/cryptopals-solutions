@@ -1056,6 +1056,40 @@ def challenge24():
     assert result == key
 
 
+CH25_KEY = secrets.token_bytes(16)
+CH25_NONCE = secrets.randbelow(0xffffffff)
+def edit(ciphertext, offset, newtext):
+    """Edit function."""
+    sblock, soffset = divmod(offset, 16)
+    eblock, eoffset = divmod(len(newtext), 16)
+    nonce_bytes = CH25_NONCE.to_bytes(8, "little")
+    counter = sblock
+    new_ciphertext = b""
+    for i in range(sblock, eblock):
+        cipher_block = ciphertext[i * 16: i * 16 + 16]
+        counter_block = nonce_bytes + counter.to_bytes(8, "little")
+        keystream = aes_ecb_encrypt(counter_block, CH25_KEY)
+        new_ciphertext += fixed_xor(keystream[soffset:16], cipher_block[soffset:16])
+        counter += 1
+        soffset = 0
+    if eoffset > 0:
+        cipher_block = ciphertext[eblock * 16:]
+        counter_block = nonce_bytes + counter.to_bytes(8, "little")
+        new_ciphertext += fixed_xor(keystream[soffset:eoffset], cipher_block[soffset:eoffset])
+    return ciphertext[:offset] + new_ciphertext
+
+
+def challenge25():
+    """Challenge 25."""
+    with open("25.txt", "rb") as f:
+        content = f.read()
+        plaintext = aes_ecb_decrypt(base64.b64decode(content), b"YELLOW SUBMARINE")
+        ciphertext = aes_ctr_encrypt(plaintext, CH25_KEY, CH25_NONCE)
+
+        result = edit(ciphertext, 0, ciphertext)
+        assert result == plaintext
+
+
 CTR_BITFLIPPING_KEY = secrets.token_bytes(16)
 CTR_BITFLIPPING_NONCE = secrets.randbelow(0xffffffff)
 def ctr_bitflipping_enc(plain):
@@ -1386,6 +1420,7 @@ def main():
         challenge23()
         challenge24()
 
+        challenge25()
         challenge26()
         challenge27()
         challenge28()
