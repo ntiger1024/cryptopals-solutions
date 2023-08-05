@@ -4,8 +4,10 @@
 import base64
 import random
 import secrets
+import struct
 import time
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+from sha1 import Sha1Hash
 
 
 class MyException(Exception):
@@ -1052,6 +1054,109 @@ def challenge24():
     assert result == key
 
 
+CTR_BITFLIPPING_KEY = secrets.token_bytes(16)
+CTR_BITFLIPPING_NONCE = secrets.randbelow(0xffffffff)
+def ctr_bitflipping_enc(plain):
+    """For challenge 26"""
+    plain = plain.replace(b";", b"").replace(b"=", b"")
+    prefix = b"comment1=cooking%20MCs;userdata="
+    postfix = b";comment2=%20like%20a%20pound%20of%20bacon"
+    return aes_ctr_encrypt(prefix+plain+postfix, CTR_BITFLIPPING_KEY, CTR_BITFLIPPING_NONCE)
+
+
+def ctr_has_admin(plain):
+    """Decrypt and find b";admin=true;"."""
+    return plain.find(b";admin=true;") > 0
+
+
+def challenge26():
+    """Challenge 26."""
+    prefix = b"comment1=cooking%20MCs;userdata="
+    plen = len(prefix)
+    plain = b":admin<true"
+    cipher = ctr_bitflipping_enc(plain)
+    malformed = bytearray(cipher)
+    malformed[plen + plain.find(b":")] ^= 1
+    malformed[plen + plain.find(b"<")] ^= 1
+    plain = aes_ctr_decrypt(malformed, CTR_BITFLIPPING_KEY, CTR_BITFLIPPING_NONCE)
+    result = ctr_has_admin(plain)
+    assert result is True
+
+
+def challenge27():
+    """Challenge 27."""
+    target_key = secrets.token_bytes(16)
+    plain = b"A" * 64
+    cipher = aes_cbc_pkcs7_encrypt_by_ecb(plain, target_key, target_key)
+    print(len(cipher))
+
+    payload = cipher[:16] + b"\x00" * 16 + cipher[:16] + cipher[48:] # + padding block
+    print(len(payload))
+    plain = aes_cbc_pkcs7_decrypt_by_ecb(payload, target_key, target_key)
+    result_key = fixed_xor(plain[:16], plain[32:])
+    assert result_key == target_key
+
+
+def sha1_mac(key, msg):
+    """Sha1 mac."""
+    sha1 = Sha1Hash()
+    return sha1.update(key + msg).digest()
+
+
+SHA1_MAC_ORACLE_KEY_LEN = 16 + secrets.randbelow(16)
+SHA1_MAC_ORACLE_KEY = secrets.token_bytes(SHA1_MAC_ORACLE_KEY_LEN)
+def sha1_mac_oracle(msg):
+    """Sha1 mac with a fixed key."""
+    return sha1_mac(SHA1_MAC_ORACLE_KEY, msg)
+
+
+def is_valid_sha1_mac(msg, digest):
+    """Validate digest of msg."""
+    expected = sha1_mac_oracle(msg)
+    return digest == expected
+
+
+def challenge28():
+    """Challenge 28."""
+    msg = b"cryptopals-sulution"
+    dgst = sha1_mac_oracle(msg)
+
+    assert is_valid_sha1_mac(msg, dgst) is True
+    assert is_valid_sha1_mac(msg + b"a", dgst) is False
+
+
+def challenge29():
+    """Challenge 29."""
+    def sha1padding(msg, prefix_len):
+        msg_len = len(msg) + prefix_len
+        padding = b"\x80"
+        padding_len = (56 - msg_len - 1) % 64
+        padding += b"\x00" * padding_len
+        padding += struct.pack(">Q", msg_len * 8)
+        return padding
+
+    orig_msg = b"comment1=cooking%20MCs;userdata=foo;comment2=%20like%20a%20pound%20of%20bacon"
+    orig_dgst = sha1_mac_oracle(orig_msg)
+    sha1_state = struct.unpack(">IIIII", orig_dgst)
+
+    postfix = b";admin=true"
+
+    key_len_max = 40
+    found = False
+    for i in range(key_len_max):
+        padding = sha1padding(orig_msg, i)
+        msg = orig_msg + padding + postfix
+        sha1 = Sha1Hash()
+        processed = i + len(orig_msg) + len(padding)
+        sha1.reinit(sha1_state, processed)
+        dgst = sha1.update(postfix).digest()
+        if is_valid_sha1_mac(msg, dgst) is True:
+            found = True
+            break
+
+    assert found is True
+
+
 def main():
     """Main entry."""
     if False:
@@ -1060,19 +1165,19 @@ def main():
         challenge3()
         challenge4()
         challenge5()
-
         challenge6()
         challenge7()
         challenge8()
+
         challenge9()
         challenge10()
-
         challenge11()
         challenge12()
         challenge13()
         challenge14()
         challenge15()
         challenge16()
+
         challenge17()
         challenge18()
         challenge19()
@@ -1081,6 +1186,11 @@ def main():
         challenge22()
         challenge23()
         challenge24()
+
+        challenge26()
+        challenge27()
+        challenge28()
+        challenge29()
 
 
 if __name__ == "__main__":

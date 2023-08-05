@@ -179,3 +179,46 @@ def reverse_lshift_xor(y, n, m):
 ## 思路
 
 由于密钥是16 bit，直接暴力破解即可。
+
+# Challenge 27
+
+## 题目
+
+使用AES-CBC加密算法时，使用key作为iv是不安全的。如果攻击者可以任意调用加密函数和解密函数，那么就可以通过修改密文然后解密，
+恢复出密钥。
+
+## 思路
+
+当key作为iv时，对于三个块的明文有：
+
+```
+C1 = aes_enc(key ^ P1)
+C2 = aes_enc(C1 ^ P2)
+C3 = aes_enc(C2 ^ P3)
+```
+
+重新组装密文块：C1', C2', C3' = C1,0,C1，解密：
+
+```
+P1' = aes_dec(C1') ^ key = aes_dec(C1) ^ key
+P3' = aes_dec(C3') ^ C2 = aes_dec(C1) ^ 0
+```
+
+于是：
+
+```
+P1' ^ P3' = aes_dec(C1) ^ key ^ aes_dec(C1) ^ 0 = key ^ 0 = key
+```
+
+当时用pkcs7padding时，需要至少使用四个明文块来加密，结果得到五个密文块，最后一个为padding块。重新组装密文的时候，只修改前三块，保持
+后两个块不变，这样解密时才能正确处理padding。
+
+# Challenge 28
+
+## 题目
+
+找一个sha1算法实现，基于sha1实现MAC算法。
+
+## 思路
+
+Copy from here：https://github.com/ajalt/python-sha1/blob/master/sha1.py
