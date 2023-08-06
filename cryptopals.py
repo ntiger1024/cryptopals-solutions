@@ -8,6 +8,8 @@ import struct
 import time
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from sha1 import Sha1Hash
+from md4 import MD4
+import hashlib
 
 
 class MyException(Exception):
@@ -1127,7 +1129,7 @@ def challenge28():
 
 def challenge29():
     """Challenge 29."""
-    def sha1padding(msg, prefix_len):
+    def hash_padding(msg, prefix_len):
         msg_len = len(msg) + prefix_len
         padding = b"\x80"
         padding_len = (56 - msg_len - 1) % 64
@@ -1144,7 +1146,7 @@ def challenge29():
     key_len_max = 40
     found = False
     for i in range(key_len_max):
-        padding = sha1padding(orig_msg, i)
+        padding = hash_padding(orig_msg, i)
         msg = orig_msg + padding + postfix
         sha1 = Sha1Hash()
         processed = i + len(orig_msg) + len(padding)
@@ -1155,6 +1157,203 @@ def challenge29():
             break
 
     assert found is True
+
+
+def md4_mac(key, msg):
+    """MD4 mac."""
+    md4 = MD4(key + msg)
+    return md4.bytes()
+
+
+MD4_MAC_ORACLE_KEY_LEN = 16 + secrets.randbelow(16)
+MD4_MAC_ORACLE_KEY = secrets.token_bytes(MD4_MAC_ORACLE_KEY_LEN)
+def md4_mac_oracle(msg):
+    """Md4 mac with a fixed key."""
+    return md4_mac(MD4_MAC_ORACLE_KEY, msg)
+
+
+def is_valid_md4_mac(msg, digest):
+    """Validate digest of msg."""
+    expected = md4_mac_oracle(msg)
+    return digest == expected
+
+
+def challenge30():
+    """Challenge 30."""
+    def hash_padding(msg, prefix_len):
+        msg_len = len(msg) + prefix_len
+        padding = b"\x80"
+        padding_len = (56 - msg_len - 1) % 64
+        padding += b"\x00" * padding_len
+        padding += struct.pack("<Q", msg_len * 8)
+        return padding
+
+    orig_msg = b"comment1=cooking%20MCs;userdata=foo;comment2=%20like%20a%20pound%20of%20bacon"
+    orig_dgst = md4_mac_oracle(orig_msg)
+    md4_state = [x for x in struct.unpack("<IIII", orig_dgst)]
+
+    postfix = b";admin=true"
+
+    key_len_max = 40
+    found = False
+    for i in range(key_len_max):
+        padding = hash_padding(orig_msg, i)
+        msg = orig_msg + padding + postfix
+        processed = i + len(orig_msg) + len(padding)
+        md4 = MD4(postfix, md4_state, processed)
+        dgst = md4.bytes()
+        if is_valid_md4_mac(msg, dgst) is True:
+            found = True
+            break
+
+    assert found is True
+
+
+def hmac_sha1(key, msg):
+    """Hmac-sha1."""
+    key_len = len(key)
+    if key_len > 64:
+        key = hashlib.sha1(key).digest()
+    else:
+        key += b"\x00" * (64 - key_len)
+
+    o_pad = fixed_xor(key, b"\x5c" * key_len)
+    i_pad = fixed_xor(key, b"\x36" * key_len)
+    return hashlib.sha1(o_pad + hashlib.sha1(i_pad + msg).digest()).digest()
+
+
+INSECURE_COMPARE_WAIT = 50
+def my_sleep(ms):
+    """My sleep function."""
+    bef = time.time_ns() // 1000000
+    while True:
+        time.sleep(0.001)
+        cur = time.time_ns() // 1000000
+        if cur - bef >= ms:
+            return
+
+
+def insecure_compare(a, b):
+    """An insecure compare function."""
+    if len(a) != len(b):
+        return False
+
+    for x, y in zip(a, b):
+        if x != y:
+            return False
+        # time.sleep(INSECURE_COMPARE_WAIT / 1000)
+        my_sleep(INSECURE_COMPARE_WAIT)
+    return True
+
+
+HMAC_SHA1_ORACLE_KEY = secrets.token_bytes(64)
+# print("key: ", HMAC_SHA1_ORACLE_KEY)
+def hmac_sha1_oracle(msg):
+    """hmac sha1 with a fixed key."""
+    return hmac_sha1(HMAC_SHA1_ORACLE_KEY, msg)
+
+
+def is_valid_hmac_sha1(msg, dgst, debug=None):
+    """Check mac validation"""
+    if debug:
+        expected = debug
+    else:
+        expected = hmac_sha1_oracle(msg)
+    return insecure_compare(dgst, expected)
+
+
+def challenge31():
+    """Challenge 31."""
+    file_content = secrets.token_bytes(128)
+    expected = hmac_sha1_oracle(file_content)
+    # print("exp: ", expected)
+
+    dgst = b""
+    for i in range(1, 21):
+        for j in range(256):
+            bytej = bytes([j])
+            curr = dgst + bytej + b"a" * (20 - i)
+            beg = time.time_ns() // 1000000
+            valid = is_valid_hmac_sha1(file_content, curr, expected)
+            duaration = time.time_ns() // 1000000 - beg
+            #print(duaration)
+            if valid:
+                # print(f"found: hmac_sha1({HMAC_SHA1_ORACLE_KEY}, {file_content}) is {curr}")
+                assert curr == expected
+                return
+            else:
+                if duaration >= i * INSECURE_COMPARE_WAIT:
+                    dgst += bytej
+                    break
+        else:
+            # print(f"not found for {i}")
+            return
+        # print(i, dgst)
+    # print(f"found: hmac_sha1({HMAC_SHA1_ORACLE_KEY}, {file_content}) is {dgst}")
+    assert dgst == expected
+
+
+def challenge32():
+    """Challenge 32."""
+    file_content = secrets.token_bytes(128)
+    expected = hmac_sha1_oracle(file_content)
+    # print("exp: ", expected)
+
+    global INSECURE_COMPARE_WAIT
+    """
+    Get the "slightly less artificial timing leak"
+    interval_max = INSECURE_COMPARE_WAIT + 1
+    for interval in range(5, interval_max, 5):
+        INSECURE_COMPARE_WAIT = interval
+        dgst = b""
+        for i in range(1, 21):
+            for j in range(256):
+                bytej = bytes([j])
+                curr = dgst + bytej + b"a" * (20 - i)
+                beg = time.time_ns() // 1000000
+                valid = is_valid_hmac_sha1(file_content, curr, expected)
+                duaration = time.time_ns() // 1000000 - beg
+                #print(duaration)
+                if valid:
+                    # print(f"found: hmac_sha1({HMAC_SHA1_ORACLE_KEY}, {file_content}) is {curr}")
+                    assert curr == expected
+                    print(f"{interval} OK")
+                    return
+                else:
+                    if duaration >= i * interval:
+                        dgst += bytej
+                        break
+            else:
+                print(f"not found for {i}")
+            # print(i, dgst)
+        # print(f"found: hmac_sha1({HMAC_SHA1_ORACLE_KEY}, {file_content}) is {dgst}")
+        if dgst == expected:
+            print(f"{interval} OK")
+        else:
+            print(f"{interval} not OK")
+    """
+    INSECURE_COMPARE_WAIT = 15
+    dgst = b""
+    count = 10
+    for i in range(1, 21):
+        max_time = 0
+        max_j = None
+        for j in range(256):
+            bytej = bytes([j])
+            curr = dgst + bytej + b"a" * (20 - i)
+            total = 0
+            for _ in range(count):
+                beg = time.time_ns() // 1000000
+                is_valid_hmac_sha1(file_content, curr, expected)
+                duaration = time.time_ns() // 1000000 - beg
+                total += duaration
+                #print(duaration)
+            if total > max_time:
+                max_time = total
+                max_j = bytej
+        dgst += max_j
+    # print(f"found: hmac_sha1({HMAC_SHA1_ORACLE_KEY}, {file_content}) is {dgst}")
+    assert dgst == expected
 
 
 def main():
@@ -1191,6 +1390,9 @@ def main():
         challenge27()
         challenge28()
         challenge29()
+        challenge30()
+        challenge31()
+        challenge32()
 
 
 if __name__ == "__main__":

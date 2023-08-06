@@ -129,7 +129,6 @@ class Sha1Hash(object):
         message = self._unprocessed
         message_byte_length = self._message_byte_length + len(message)
 
-        saved_len = len(message)
         # append the bit '1' to the message
         message += b'\x80'
 
